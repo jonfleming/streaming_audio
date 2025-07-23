@@ -9,7 +9,7 @@ const char* ssid = "FLEMING";
 const char* password = "aMi4mTsg";
 const char* wsServer = "omen"; // WebSocket server hostname
 const int wsPort = 3000;      // WebSocket server port
-const char* wsPath = "/ws";   // WebSocket endpoint
+const char* wsPath = "/";   // WebSocket endpoint
 const byte ledPin = BUILTIN_LED;
 
 I2SClass i2s;
@@ -62,6 +62,9 @@ void setup() {
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000); // Try to reconnect every 5 seconds
 
+  // Set I2S pins for PDM microphone
+  i2s.setPinsPdmRx(42, 41); // CLK=42, DATA=41 - adjust for your board
+
   // Initialize I2S for PDM RX
   i2s.begin(I2S_MODE_PDM_RX, SAMPLERATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
 
@@ -92,16 +95,17 @@ void loop() {
   if (recording && webSocket.isConnected()) {
     int validSamples = 0;
     for (int i = 0; i < BUFFER_SIZE; i++) {
-      if (debugCounter++ % 100 == 0) {
-        Serial.print("o");
-      }
-
       if (i2s.available()) {
         int32_t sample = i2s.read();
         int16_t sample16 = (int16_t)(sample & 0xFFFF) * 2; // Convert to 16-bit
+        if (debugCounter++ % 500 == 0) {
+          // Serial.printf("Sample: %d\t%d\n", sample, sample16);
+          Serial.print("o");
+        }
         buffer[i] = sample16;
         validSamples++;
       } else {
+        Serial.println("\n No data available");
         break;
       }
     }
@@ -109,7 +113,7 @@ void loop() {
     if (validSamples > 0) {
       // Send audio buffer over WebSocket as binary data
       webSocket.sendBIN((uint8_t*)buffer, validSamples * sizeof(int16_t));
-      Serial.printf("\nSent %d samples\n", validSamples);
+      // Serial.printf("\nSent %d samples\n", validSamples);
     }
   }
 }
