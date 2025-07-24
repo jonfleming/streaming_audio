@@ -11,6 +11,8 @@ const char* wsServer = "omen"; // WebSocket server hostname
 const int wsPort = 3000;      // WebSocket server port
 const char* wsPath = "/";   // WebSocket endpoint
 const byte ledPin = BUILTIN_LED;
+const byte btnPin = D7;
+
 
 I2SClass i2s;
 WebSocketsClient webSocket;
@@ -34,6 +36,8 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         Serial.println("Received stop command");
         recording = false;
         digitalWrite(ledPin, HIGH);
+      } else {
+        Serial.printf("Received message: %s\n", payload);
       }
       break;
     case WStype_BIN:
@@ -47,6 +51,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
 void setup() {
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
+  pinMode(btnPin, INPUT_PULLUP);
   digitalWrite(ledPin, HIGH); // LED off (active low)
 
   // Connect to WiFi
@@ -73,36 +78,75 @@ void setup() {
   Serial.println("- Send 's' via serial to stop recording");
 }
 
-void loop() {
-  webSocket.loop(); // Handle WebSocket events
+bool checkButton() {
+  if (!digitalRead(btnPin)) {
+    if (recording) {
+      digitalWrite(ledPin, HIGH); // LED off
+      Serial.println("\nDetected button. Stop Recording");
+      webSocket.sendTXT("stop"); // Notify server to finalize recording
+      recording = false;
+    } else {
+      digitalWrite(ledPin, LOW); // LED on
+      Serial.println("\nDetected button. Start Recording");
+      recording = true;
+    }
 
+    delay(1500);
+  }
+  return recording;
+}
+
+void checkSerial() {
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     if (cmd == "r") {
       digitalWrite(ledPin, LOW); // LED on
-      Serial.println("Start Recording");
+      Serial.println("\nRecord Command. Start Recording");
       recording = true;
     } else if (cmd == "s") {
       digitalWrite(ledPin, HIGH); // LED off
-      Serial.println("Stop Recording");
+      Serial.println("\nStop Command. Stop Recording");
       recording = false;
       webSocket.sendTXT("stop"); // Notify server to finalize recording
     } else {
-      Serial.printf("Unknown command: %s\n", cmd.c_str());
+      Serial.printf("\nUnknown command: %s\n", cmd.c_str());
     }
   }
+}
+
+bool getSample(int i) {
+  if (i2s.available()) {
+    int32_t sample = i2s.read();
+    int16_t sample16 = (int16_t)(sample & 0xFFFF) * 2; // Convert to 16-bit
+    if (debugCounter++ % 10000 == 0) {
+      // Serial.printf("Sample: %d\t%d\n", sample, sample16);
+      Serial.print("o");
+    }
+    buffer[i] = sample16;
+    return true; // Data available
+  } else {
+    Serial.println("\n No data available");
+    return false; // No data available
+  }
+}
+
+void loop() {
+  if (debugCounter++ % 100000 == 0) {
+    Serial.print("-");
+  }
+
+  webSocket.loop(); // Handle WebSocket events
+  checkButton();
+  checkSerial();
 
   if (recording && webSocket.isConnected()) {
     int validSamples = 0;
     for (int i = 0; i < BUFFER_SIZE; i++) {
-      if (i2s.available()) {
-        int32_t sample = i2s.read();
-        int16_t sample16 = (int16_t)(sample & 0xFFFF) * 2; // Convert to 16-bit
-        if (debugCounter++ % 500 == 0) {
-          // Serial.printf("Sample: %d\t%d\n", sample, sample16);
-          Serial.print("o");
-        }
-        buffer[i] = sample16;
+      if (!checkButton()) {
+        validSamples = 0; // Reset valid samples if button pressed
+        break;
+      }
+      if (getSample(i)) {
         validSamples++;
       } else {
         Serial.println("\n No data available");
