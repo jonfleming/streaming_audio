@@ -10,6 +10,7 @@ const char* password = "aMi4mTsg";
 const char* wsServer = "omen"; // WebSocket server hostname
 const int wsPort = 3000;      // WebSocket server port
 const char* wsPath = "/";   // WebSocket endpoint
+const byte ledPin = D7;
 
 
 I2SClass i2s;
@@ -48,6 +49,8 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Setup.");
 
+  pinMode(ledPin, OUTPUT);
+
   // Connect to WiFi
   WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi...");
@@ -73,6 +76,7 @@ void setup() {
   Serial.println("- Send 's' via serial to stop recording");
 
   recording = true;
+  digitalWrite(ledPin, HIGH);
 }
 
 
